@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Privat</title>
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0b0c0f">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <style>
+    /* Hülle: neutrale Passwort-Seite. Die eigentliche App liegt verschlüsselt in paket.json. */
+    :root { color-scheme: dark; }
+    [hidden] { display: none !important; }
+    html, body { height: 100%; margin: 0; background: #0b0c0f; color: #f2f3f5; font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+    .sperre { display: flex; min-height: 100%; align-items: center; justify-content: center; padding: 24px 16px; box-sizing: border-box; }
+    form { display: flex; flex-direction: column; align-items: stretch; gap: 12px; width: 100%; max-width: 340px; }
+    .logo { align-self: center; width: 72px; height: 72px; margin-bottom: 8px; border-radius: 18px; }
+    input { padding: 13px 14px; font-family: inherit; font-size: 16px; color: #f2f3f5; background: #1d2027; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 14px; outline: none; }
+    input:focus { border-color: rgba(255, 90, 110, 0.6); }
+    button { min-height: 50px; font-family: inherit; font-size: 17px; font-weight: 600; color: #fff; background: linear-gradient(135deg, #ff5a6e, #ff8a3d); border: 0; border-radius: 14px; cursor: pointer; }
+    button:disabled { opacity: 0.6; }
+    .fehler { min-height: 22px; margin: 0; font-size: 14px; text-align: center; color: #ff7b7b; }
+  </style>
+</head>
+<body>
+  <div class="sperre" id="sperre" hidden>
+    <form id="form">
+      <img class="logo" src="icons/apple-touch-icon.png" alt="">
+      <input id="passwort" type="password" autocomplete="current-password" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Passwort" required>
+      <button id="oeffnen" type="submit">Öffnen</button>
+      <p class="fehler" id="fehler" role="status"></p>
+    </form>
+  </div>
+  <script>
+    (() => {
+      'use strict';
+      // Der aus dem Passwort abgeleitete Zugang wird nach dem ersten richtigen Passwort auf dem Gerät gemerkt.
+      const MERKER = 'guru.zugang';
+      const $ = (id) => document.getElementById(id);
+      const bytes = (b64) => Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
+      const alsB64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf)));
+      let paket;
+
+      async function entschluesseln(bits) {
+        const key = await crypto.subtle.importKey('raw', bits, 'AES-GCM', false, ['decrypt']);
+        const klar = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: bytes(paket.iv) }, key, bytes(paket.daten));
+        return new TextDecoder().decode(klar);
+      }
+
+      async function ausPasswort(passwort) {
+        const basis = await crypto.subtle.importKey('raw', new TextEncoder().encode(passwort.trim().toLowerCase()), 'PBKDF2', false, ['deriveBits']);
+        return crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: bytes(paket.salz), iterations: paket.iterationen }, basis, 256);
+      }
+
+      function zeigen(html) {
+        document.open();
+        document.write(html);
+        document.close();
+      }
+
+      function sperren(text = '') {
+        $('sperre').hidden = false;
+        $('fehler').textContent = text;
+        $('oeffnen').disabled = false;
+        $('oeffnen').textContent = 'Öffnen';
+      }
+
+      $('form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        if (!paket) { sperren('Keine Verbindung – bitte später nochmal.'); return; }
+        $('oeffnen').disabled = true;
+        $('oeffnen').textContent = 'Prüfe …';
+        try {
+          const bits = await ausPasswort($('passwort').value);
+          const html = await entschluesseln(bits);
+          try { localStorage.setItem(MERKER, alsB64(bits)); } catch { /* dann eben jedes Mal */ }
+          zeigen(html);
+        } catch {
+          sperren('Falsches Passwort');
+        }
+      });
+
+      (async () => {
+        try {
+          const res = await fetch('paket.json', { cache: 'no-cache' });
+          if (!res.ok) throw new Error(res.status);
+          paket = await res.json();
+        } catch {
+          sperren('Keine Verbindung – bitte später nochmal.');
+          return;
+        }
+        let gemerkt = null;
+        try { gemerkt = localStorage.getItem(MERKER); } catch { /* privat */ }
+        if (gemerkt) {
+          try {
+            zeigen(await entschluesseln(bytes(gemerkt)));
+            return;
+          } catch {
+            try { localStorage.removeItem(MERKER); } catch { /* egal */ }
+          }
+        }
+        sperren();
+      })();
+    })();
+  </script>
+</body>
+</html>

@@ -6,7 +6,7 @@
 // Nur ohne Verbindung wird die zuletzt gespeicherte Version gezeigt.
 // Anfragen an die KI (andere Adresse) laufen nie über den Cache.
 
-const CACHE = 'guru-489f9c48db';
+const CACHE = 'guru-a36a3ea600';
 const SHELL = ["./", "index.html", "paket.json", "manifest.webmanifest", "icons/icon.svg", "icons/icon-192.png", "icons/apple-touch-icon.png"];
 
 self.addEventListener('install', (e) => {
